@@ -3,6 +3,7 @@
 #include <vector>
 #include <cctype>
 #include <fstream>
+#include <stdexcept>
 
 enum class TokenType {
     PLUS, MINUS, MUL, DIV, LPAR, RPAR, NUM, END_OF_FILE, ERROR
@@ -32,11 +33,27 @@ private:
 
     Token getNumber() {
         std::string numStr;
+        bool hasDecimal = false;
+        size_t startPos = pos;
+
         while (pos < input.length() && isNumberChar(input[pos])) {
+            if (input[pos] == '.') {
+                if (hasDecimal) {
+                    return Token(TokenType::ERROR, "Multiple decimal points");
+                }
+                hasDecimal = true;
+            }
             numStr += input[pos];
             pos++;
         }
-        return Token(TokenType::NUM, numStr);
+
+        // validate number format
+        try {
+            std::stod(numStr);
+            return Token(TokenType::NUM, numStr);
+        } catch (...) {
+            return Token(TokenType::ERROR, "Invalid number format: " + numStr);
+        }
     }
 
 public:
@@ -60,7 +77,7 @@ public:
             case '(': return Token(TokenType::LPAR, "(");
             case ')': return Token(TokenType::RPAR, ")");
             default:
-                if (std::isdigit(current)) {
+                if (std::isdigit(current) || current == '.') {
                     pos--;
                     return getNumber();
                 }
@@ -83,6 +100,108 @@ public:
     }
 };
 
+// AST node types
+enum class NodeType {
+    NUMBER,
+    BINARY_OP
+};
+
+struct ASTNode {
+    NodeType type;
+    virtual ~ASTNode() = default;
+    explicit ASTNode(NodeType t) : type(t) {}
+};
+
+struct NumberNode : public ASTNode {
+    double value;
+    explicit NumberNode(double v) : ASTNode(NodeType::NUMBER), value(v) {}
+};
+
+struct BinaryOpNode : public ASTNode {
+    TokenType op;
+    ASTNode* left;
+    ASTNode* right;
+    BinaryOpNode(TokenType o, ASTNode* l, ASTNode* r)
+        : ASTNode(NodeType::BINARY_OP), op(o), left(l), right(r) {}
+    ~BinaryOpNode() {
+        delete left;
+        delete right;
+    }
+};
+
+class Parser {
+private:
+    const std::vector<Token>& tokens;
+    size_t pos;
+    Token currentToken;
+
+    void advance() {
+        if (pos < tokens.size()) {
+            currentToken = tokens[pos++];
+        } else {
+            currentToken = Token(TokenType::END_OF_FILE, "");
+        }
+    }
+
+    ASTNode* factor() {
+        if (currentToken.type == TokenType::NUM) {
+            double value = std::stod(currentToken.value);
+            advance();
+            return new NumberNode(value);
+        } else if (currentToken.type == TokenType::LPAR) {
+            advance();
+            ASTNode* node = expr();
+            if (currentToken.type != TokenType::RPAR) {
+                throw std::runtime_error("Expected closing parenthesis");
+            }
+            advance();
+            return node;
+        }
+        throw std::runtime_error("Expected number or parenthesis");
+    }
+
+    ASTNode* term() {
+        ASTNode* node = factor();
+        while (currentToken.type == TokenType::MUL || currentToken.type == TokenType::DIV) {
+            TokenType op = currentToken.type;
+            advance();
+            ASTNode* right = factor();
+            node = new BinaryOpNode(op, node, right);
+        }
+        return node;
+    }
+
+    ASTNode* expr() {
+        ASTNode* node = term();
+        while (currentToken.type == TokenType::PLUS || currentToken.type == TokenType::MINUS) {
+            TokenType op = currentToken.type;
+            advance();
+            ASTNode* right = term();
+            node = new BinaryOpNode(op, node, right);
+        }
+        return node;
+    }
+
+public:
+    Parser(const std::vector<Token>& t) : tokens(t), pos(0), currentToken(TokenType::END_OF_FILE, "") {
+        if (!tokens.empty()) {
+            currentToken = tokens[0];
+            pos = 1;
+        }
+    }  
+
+    ASTNode* parse() {
+        if (currentToken.type == TokenType::END_OF_FILE) {
+            throw std::runtime_error("Empty expression");
+        }
+        ASTNode* node = expr();
+        if (currentToken.type != TokenType::END_OF_FILE) {
+            throw std::runtime_error("Unexpected tokens after expression");
+        }
+        return node;
+    }
+};
+
 std::string tokenTypeToString(TokenType type) {
     switch (type) {
         case TokenType::PLUS: return "PLUS";
@@ -95,6 +214,21 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::ERROR: return "ERROR";
         default: return "UNKNOWN";
+    }
+}
+
+void printAST(ASTNode* node, int indent = 0) {
+    if (!node) return;
+    std::string indentStr(indent, ' ');
+
+    if (node->type == NodeType::NUMBER) {
+        NumberNode* num = dynamic_cast<NumberNode*>(node);
+        std::cout << indentStr << "Number: " << num->value << "\n";
+    } else if (node->type == NodeType::BINARY_OP) {
+        BinaryOpNode* bin = dynamic_cast<BinaryOpNode*>(node);
+        std::cout << indentStr << "BinaryOp: " << tokenTypeToString(bin->op) << "\n";
+        printAST(bin->left, indent + 2); 
+        printAST(bin->right, indent + 2); 
     }
 }
 
@@ -117,13 +251,26 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Lexer lexer(input);
-    std::vector<Token> tokens = lexer.tokenize();
+    try {
+        Lexer lexer(input);
+        std::vector<Token> tokens = lexer.tokenize();
 
-    std::cout << "\nTokens:\n";
-    for (const auto& token : tokens) {
-        std::cout << "Type: " << tokenTypeToString(token.type)
-                  << ", Value: " << token.value << "\n";
+        std::cout << "\nTokens:\n";
+        for (const auto& token : tokens) {
+            std::cout << "Type: " << tokenTypeToString(token.type)
+                      << ", Value: " << token.value << "\n";
+        }
+
+        Parser parser(tokens);
+        ASTNode* ast = parser.parse();
+        
+        std::cout << "\nAST:\n";
+        printAST(ast);
+        
+        delete ast;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << "\n";
+        return 1;
     }
 
     return 0;
