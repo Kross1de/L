@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <cctype>
+#include <fstream>
 
 enum class TokenType {
     PLUS, MINUS, MUL, DIV, LPAR, RPAR, NUM, END_OF_FILE, ERROR
@@ -97,10 +98,24 @@ std::string tokenTypeToString(TokenType type) {
     }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     std::string input;
-    std::cout << ": ";
-    std::getline(std::cin, input);
+
+    if (argc == 3 && std::string(argv[1]) == "-output") {
+        std::ifstream file(argv[2]);
+        if (!file.is_open()) {
+            std::cerr << "Error: Could not open file '" << argv[2] << "'\n";
+            return 1;
+        }
+        std::string line;
+        while (std::getline(file, line)) {
+            input += line + "\n";
+        }
+        file.close();
+    } else {
+        std::cerr << "Usage: " << argv[0] << " [-output <filename>]\n";
+        return 1;
+    }
 
     Lexer lexer(input);
     std::vector<Token> tokens = lexer.tokenize();
