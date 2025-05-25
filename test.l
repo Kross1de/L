@@ -1,2 +1,3 @@
-1 + 2 * (3 + 4) // this is a test comment
+1 + 2 ^ (3 + 4) // this is a test comment
 // yes i added comment support it works alright!
+77712 + 2331 * (5 ^ 6)

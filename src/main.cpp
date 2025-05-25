@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 enum class TokenType {
-    PLUS, MINUS, MUL, DIV, LPAR, RPAR, NUM, END_OF_FILE, ERROR
+    PLUS, MINUS, MUL, DIV, EXP,LPAR, RPAR, NUM, IDENTIFIER,END_OF_FILE, ERROR
 };
 
 struct Token {
@@ -57,6 +57,10 @@ private:
         return std::isdigit(c) || c == '.';
     }
 
+    bool isIdentifierChar(char c){
+        return std::isalnum(c)||c=='_';
+    }
+
     Token getNumber() {
         std::string numStr;
         bool hasDecimal = false;
@@ -92,6 +96,20 @@ private:
         }
     }
 
+    Token getIdentifier(){
+        std::string idStr;
+        size_t startLine = line;
+        size_t startColumn = column;
+
+        while(pos<input.length()&&isIdentifierChar(input[pos])){
+            idStr+=input[pos];
+            pos++;
+            column++;
+        }
+
+        return Token(TokenType::IDENTIFIER,idStr,startLine,startColumn);
+    }
+
 public:
     Lexer(const std::string& src) : input(src), pos(0), line(1), column(1) {}
 
@@ -118,6 +136,7 @@ public:
             case '-': return Token(TokenType::MINUS, "-", currentLine, currentColumn);
             case '*': return Token(TokenType::MUL, "*", currentLine, currentColumn);
             case '/': return Token(TokenType::DIV, "/", currentLine, currentColumn);
+            case '^': return Token(TokenType::EXP, "^", currentLine, currentColumn);
             case '(': return Token(TokenType::LPAR, "(", currentLine, currentColumn);
             case ')': return Token(TokenType::RPAR, ")", currentLine, currentColumn);
             default:
@@ -125,6 +144,11 @@ public:
                     pos--;
                     column--;
                     return getNumber();
+                }
+                if(std::isalpha(current)||current=='_'){
+                    pos--;
+                    column--;
+                    return getIdentifier();
                 }
                 return Token(TokenType::ERROR, std::string(1, current), currentLine, currentColumn);
         }
@@ -136,7 +160,7 @@ public:
         while (token.type != TokenType::END_OF_FILE) {
             tokens.push_back(token);
             if (token.type == TokenType::ERROR) {
-                break; // stop if error
+                break; 
             }
             token = nextToken();
         }
@@ -148,6 +172,7 @@ public:
 // AST node types
 enum class NodeType {
     NUMBER,
+    IDENTIFIER,
     BINARY_OP
 };
 
@@ -160,6 +185,11 @@ struct ASTNode {
 struct NumberNode : public ASTNode {
     double value;
     explicit NumberNode(double v) : ASTNode(NodeType::NUMBER), value(v) {}
+};
+
+struct IdentifierNode : public ASTNode {
+    std::string name;
+    explicit IdentifierNode(const std::string& n) : ASTNode(NodeType::IDENTIFIER), name(n) {}
 };
 
 struct BinaryOpNode : public ASTNode {
@@ -193,28 +223,43 @@ private:
             double value = std::stod(currentToken.value);
             advance();
             return new NumberNode(value);
+        } else if (currentToken.type == TokenType::IDENTIFIER) {
+            std::string name = currentToken.value;
+            advance();
+            return new IdentifierNode(name);
         } else if (currentToken.type == TokenType::LPAR) {
             advance();
             ASTNode* node = expr();
             if (currentToken.type != TokenType::RPAR) {
-                throw std::runtime_error("Expected closing parenthesis at line " + 
-                    std::to_string(currentToken.line) + ", column " + 
+                throw std::runtime_error("Expected closing parenthesis at line " +
+                    std::to_string(currentToken.line) + ", column " +
                     std::to_string(currentToken.column));
             }
             advance();
             return node;
         }
-        throw std::runtime_error("Expected number or parenthesis at line " + 
-            std::to_string(currentToken.line) + ", column " + 
+        throw std::runtime_error("Expected number or parenthesis at line " +
+            std::to_string(currentToken.line) + ", column " +
             std::to_string(currentToken.column));
     }
-
-    ASTNode* term() {
+    
+    ASTNode* power(){
         ASTNode* node = factor();
-        while (currentToken.type == TokenType::MUL || currentToken.type == TokenType::DIV) {
+        while(currentToken.type == TokenType::EXP){
             TokenType op = currentToken.type;
             advance();
             ASTNode* right = factor();
+            node = new BinaryOpNode(op,node,right);
+        }
+        return node;
+    }
+
+    ASTNode* term() {
+        ASTNode* node = power();
+        while (currentToken.type == TokenType::MUL || currentToken.type == TokenType::DIV) {
+            TokenType op = currentToken.type;
+            advance();
+            ASTNode* right = power();
             node = new BinaryOpNode(op, node, right);
         }
         return node;
@@ -239,17 +284,16 @@ public:
         }
     }  
 
-    ASTNode* parse() {
-        if (currentToken.type == TokenType::END_OF_FILE) {
+    std::vector<ASTNode*> parse() {
+        std::vector<ASTNode*> nodes;
+        while (currentToken.type != TokenType::END_OF_FILE) {
+            ASTNode* node = expr();
+            nodes.push_back(node);
+        }
+        if (nodes.empty()) {
             throw std::runtime_error("Empty expression");
         }
-        ASTNode* node = expr();
-        if (currentToken.type != TokenType::END_OF_FILE) {
-            throw std::runtime_error("Unexpected tokens after expression at line " + 
-                std::to_string(currentToken.line) + ", column " + 
-                std::to_string(currentToken.column));
-        }
-        return node;
+        return nodes;
     }
 };
 
@@ -259,9 +303,11 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::MINUS: return "MINUS";
         case TokenType::MUL: return "MUL";
         case TokenType::DIV: return "DIV";
+        case TokenType::EXP: return "EXP";
         case TokenType::LPAR: return "LPAR";
         case TokenType::RPAR: return "RPAR";
         case TokenType::NUM: return "NUM";
+        case TokenType::IDENTIFIER: return "IDENTIFIER";
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::ERROR: return "ERROR";
         default: return "UNKNOWN";
@@ -271,15 +317,17 @@ std::string tokenTypeToString(TokenType type) {
 void printAST(ASTNode* node, int indent = 0) {
     if (!node) return;
     std::string indentStr(indent, ' ');
-
     if (node->type == NodeType::NUMBER) {
         NumberNode* num = dynamic_cast<NumberNode*>(node);
         std::cout << indentStr << "Number: " << num->value << "\n";
+    } else if (node->type == NodeType::IDENTIFIER) {
+        IdentifierNode* id = dynamic_cast<IdentifierNode*>(node);
+        std::cout << indentStr << "Identifier: " << id->name << "\n";
     } else if (node->type == NodeType::BINARY_OP) {
         BinaryOpNode* bin = dynamic_cast<BinaryOpNode*>(node);
         std::cout << indentStr << "BinaryOp: " << tokenTypeToString(bin->op) << "\n";
-        printAST(bin->left, indent + 2); 
-        printAST(bin->right, indent + 2); 
+        printAST(bin->left, indent + 2);
+        printAST(bin->right, indent + 2);
     }
 }
 
@@ -322,12 +370,18 @@ int main(int argc, char* argv[]) {
         }
 
         Parser parser(tokens);
-        ASTNode* ast = parser.parse();
+        std::vector<ASTNode*> asts = parser.parse();
         
-        std::cout << "\nAST:\n";
-        printAST(ast);
-        
-        delete ast;
+        std::cout << "\nASTs:\n";
+        for (size_t i = 0; i < asts.size(); ++i) {
+            std::cout << "Expression " << i + 1 << ":\n";
+            printAST(asts[i]);
+            std::cout << "\n";
+        }
+
+        for (ASTNode* ast : asts) {
+            delete ast;
+        }
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
