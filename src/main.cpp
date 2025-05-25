@@ -12,18 +12,44 @@ enum class TokenType {
 struct Token {
     TokenType type;
     std::string value;
+    size_t line;
+    size_t column;
 
-    Token(TokenType t, std::string v) : type(t), value(v) {}
+    Token(TokenType t, std::string v, size_t l, size_t c) 
+        : type(t), value(v), line(l), column(c) {}
 };
 
 class Lexer {
 private:
     std::string input;
     size_t pos;
+    size_t line;
+    size_t column;
 
     void skipWhitespace() {
         while (pos < input.length() && std::isspace(input[pos])) {
+            if (input[pos] == '\n') {
+                line++;
+                column = 0;
+            }
             pos++;
+            column++;
+        }
+    }
+
+    void skipComments() {
+        if(pos<input.length()&&input[pos]=='/'&&pos+1<input.length()&&input[pos+1]=='/') {
+            pos += 2;   // skip
+            column += 2;
+            while(pos<input.length()&&input[pos]!='\n'){
+                pos++;
+                column++;
+            }
+            if(pos<input.length()&&input[pos]=='\n'){
+                pos++;
+                line++;
+                column = 0;
+            }
         }
     }
 
@@ -35,53 +61,72 @@ private:
         std::string numStr;
         bool hasDecimal = false;
         size_t startPos = pos;
+        size_t startLine = line;
+        size_t startColumn = column;
 
-        while (pos < input.length() && isNumberChar(input[pos])) {
+        if (pos > 0 && input[pos-1] == '-' && 
+            (pos == 1 || std::isspace(input[pos-2]) || input[pos-2] == '(')) {
+            numStr += '-';
+            pos--;
+            column--;
+        }
+
+        while (pos < input.length() && (isNumberChar(input[pos]) || input[pos] == '-')) {
             if (input[pos] == '.') {
                 if (hasDecimal) {
-                    return Token(TokenType::ERROR, "Multiple decimal points");
+                    return Token(TokenType::ERROR, "Multiple decimal points", line, column);
                 }
                 hasDecimal = true;
             }
             numStr += input[pos];
             pos++;
+            column++;
         }
 
         // validate number format
         try {
             std::stod(numStr);
-            return Token(TokenType::NUM, numStr);
+            return Token(TokenType::NUM, numStr, startLine, startColumn);
         } catch (...) {
-            return Token(TokenType::ERROR, "Invalid number format: " + numStr);
+            return Token(TokenType::ERROR, "Invalid number format: " + numStr, startLine, startColumn);
         }
     }
 
 public:
-    Lexer(const std::string& src) : input(src), pos(0) {}
+    Lexer(const std::string& src) : input(src), pos(0), line(1), column(1) {}
 
     Token nextToken() {
         skipWhitespace();
 
+        while (pos < input.length() && input[pos] == '/' && pos + 1 < input.length() && input[pos + 1] == '/') {
+            skipComments();
+            skipWhitespace(); 
+        }
+
         if (pos >= input.length()) {
-            return Token(TokenType::END_OF_FILE, "");
+            return Token(TokenType::END_OF_FILE, "", line, column);
         }
 
         char current = input[pos];
+        size_t currentLine = line;
+        size_t currentColumn = column;
         pos++;
+        column++;
 
         switch (current) {
-            case '+': return Token(TokenType::PLUS, "+");
-            case '-': return Token(TokenType::MINUS, "-");
-            case '*': return Token(TokenType::MUL, "*");
-            case '/': return Token(TokenType::DIV, "/");
-            case '(': return Token(TokenType::LPAR, "(");
-            case ')': return Token(TokenType::RPAR, ")");
+            case '+': return Token(TokenType::PLUS, "+", currentLine, currentColumn);
+            case '-': return Token(TokenType::MINUS, "-", currentLine, currentColumn);
+            case '*': return Token(TokenType::MUL, "*", currentLine, currentColumn);
+            case '/': return Token(TokenType::DIV, "/", currentLine, currentColumn);
+            case '(': return Token(TokenType::LPAR, "(", currentLine, currentColumn);
+            case ')': return Token(TokenType::RPAR, ")", currentLine, currentColumn);
             default:
-                if (std::isdigit(current) || current == '.') {
+                if (std::isdigit(current) || current == '.' || current == '-') {
                     pos--;
+                    column--;
                     return getNumber();
                 }
-                return Token(TokenType::ERROR, std::string(1, current));
+                return Token(TokenType::ERROR, std::string(1, current), currentLine, currentColumn);
         }
     }
 
@@ -95,7 +140,7 @@ public:
             }
             token = nextToken();
         }
-        tokens.push_back(Token(TokenType::END_OF_FILE, ""));
+        tokens.push_back(Token(TokenType::END_OF_FILE, "", line, column));
         return tokens;
     }
 };
@@ -139,7 +184,7 @@ private:
         if (pos < tokens.size()) {
             currentToken = tokens[pos++];
         } else {
-            currentToken = Token(TokenType::END_OF_FILE, "");
+            currentToken = Token(TokenType::END_OF_FILE, "", 0, 0);
         }
     }
 
@@ -152,12 +197,16 @@ private:
             advance();
             ASTNode* node = expr();
             if (currentToken.type != TokenType::RPAR) {
-                throw std::runtime_error("Expected closing parenthesis");
+                throw std::runtime_error("Expected closing parenthesis at line " + 
+                    std::to_string(currentToken.line) + ", column " + 
+                    std::to_string(currentToken.column));
             }
             advance();
             return node;
         }
-        throw std::runtime_error("Expected number or parenthesis");
+        throw std::runtime_error("Expected number or parenthesis at line " + 
+            std::to_string(currentToken.line) + ", column " + 
+            std::to_string(currentToken.column));
     }
 
     ASTNode* term() {
@@ -183,7 +232,7 @@ private:
     }
 
 public:
-    Parser(const std::vector<Token>& t) : tokens(t), pos(0), currentToken(TokenType::END_OF_FILE, "") {
+    Parser(const std::vector<Token>& t) : tokens(t), pos(0), currentToken(TokenType::END_OF_FILE, "", 0, 0) {
         if (!tokens.empty()) {
             currentToken = tokens[0];
             pos = 1;
@@ -196,7 +245,9 @@ public:
         }
         ASTNode* node = expr();
         if (currentToken.type != TokenType::END_OF_FILE) {
-            throw std::runtime_error("Unexpected tokens after expression");
+            throw std::runtime_error("Unexpected tokens after expression at line " + 
+                std::to_string(currentToken.line) + ", column " + 
+                std::to_string(currentToken.column));
         }
         return node;
     }
@@ -236,6 +287,13 @@ int main(int argc, char* argv[]) {
     std::string input;
 
     if (argc == 3 && std::string(argv[1]) == "-output") {
+        std::string filename(argv[2]);
+        if (filename.length() < 2 || filename.substr(filename.length() - 2) != ".l") {
+            std::cerr << "Error: Input file must have .l extension\n";
+            std::cerr << "Usage: " << argv[0] << " -output <filename.l>\n";
+            return 1;
+        }
+
         std::ifstream file(argv[2]);
         if (!file.is_open()) {
             std::cerr << "Error: Could not open file '" << argv[2] << "'\n";
@@ -247,7 +305,7 @@ int main(int argc, char* argv[]) {
         }
         file.close();
     } else {
-        std::cerr << "Usage: " << argv[0] << " [-output <filename>]\n";
+        std::cerr << "Usage: " << argv[0] << " -output <filename.l>\n";
         return 1;
     }
 
@@ -258,7 +316,9 @@ int main(int argc, char* argv[]) {
         std::cout << "\nTokens:\n";
         for (const auto& token : tokens) {
             std::cout << "Type: " << tokenTypeToString(token.type)
-                      << ", Value: " << token.value << "\n";
+                      << ", Value: " << token.value 
+                      << ", Line: " << token.line 
+                      << ", Column: " << token.column << "\n";
         }
 
         Parser parser(tokens);
