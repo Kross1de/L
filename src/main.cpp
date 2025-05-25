@@ -4,9 +4,11 @@
 #include <cctype>
 #include <fstream>
 #include <stdexcept>
+#include "misc.hpp"
 
 enum class TokenType {
-    PLUS, MINUS, MUL, DIV, EXP,LPAR, RPAR, NUM, IDENTIFIER,END_OF_FILE, ERROR
+    PLUS, MINUS, MUL, DIV, EXP, LPAR, RPAR, NUM, IDENTIFIER, 
+    FN, LBRACE, RBRACE, COMMA, END_OF_FILE, ERROR
 };
 
 struct Token {
@@ -21,34 +23,24 @@ struct Token {
 
 class Lexer {
 private:
-    std::string input;
+    Misc misc;
     size_t pos;
-    size_t line;
-    size_t column;
 
     void skipWhitespace() {
-        while (pos < input.length() && std::isspace(input[pos])) {
-            if (input[pos] == '\n') {
-                line++;
-                column = 0;
-            }
-            pos++;
-            column++;
+        while (!misc.eof() && std::isspace(misc.peek())) {
+            misc.get();
         }
     }
 
     void skipComments() {
-        if(pos<input.length()&&input[pos]=='/'&&pos+1<input.length()&&input[pos+1]=='/') {
-            pos += 2;   // skip
-            column += 2;
-            while(pos<input.length()&&input[pos]!='\n'){
-                pos++;
-                column++;
+        if (!misc.eof() && misc.peek() == '/' && misc.getRemaining().length() > 1 && misc.getRemaining()[1] == '/') {
+            misc.get(); 
+            misc.get(); 
+            while (!misc.eof() && misc.peek() != '\n') {
+                misc.get();
             }
-            if(pos<input.length()&&input[pos]=='\n'){
-                pos++;
-                line++;
-                column = 0;
+            if (!misc.eof() && misc.peek() == '\n') {
+                misc.get();
             }
         }
     }
@@ -57,37 +49,32 @@ private:
         return std::isdigit(c) || c == '.';
     }
 
-    bool isIdentifierChar(char c){
-        return std::isalnum(c)||c=='_';
+    bool isIdentifierChar(char c) {
+        return std::isalnum(c) || c == '_';
     }
 
     Token getNumber() {
         std::string numStr;
         bool hasDecimal = false;
-        size_t startPos = pos;
-        size_t startLine = line;
-        size_t startColumn = column;
+        size_t startLine = misc.getLine();
+        size_t startColumn = misc.getColumn();
 
-        if (pos > 0 && input[pos-1] == '-' && 
-            (pos == 1 || std::isspace(input[pos-2]) || input[pos-2] == '(')) {
-            numStr += '-';
-            pos--;
-            column--;
+        if (!misc.eof() && misc.peek() == '-' && 
+            (pos == 0 || std::isspace(misc.getRemaining()[pos-1]) || misc.getRemaining()[pos-1] == '(')) {
+            numStr += misc.get();
         }
 
-        while (pos < input.length() && (isNumberChar(input[pos]) || input[pos] == '-')) {
-            if (input[pos] == '.') {
+        while (!misc.eof() && isNumberChar(misc.peek())) {
+            char c = misc.get();
+            if (c == '.') {
                 if (hasDecimal) {
-                    return Token(TokenType::ERROR, "Multiple decimal points", line, column);
+                    return Token(TokenType::ERROR, "Multiple decimal points", startLine, startColumn);
                 }
                 hasDecimal = true;
             }
-            numStr += input[pos];
-            pos++;
-            column++;
+            numStr += c;
         }
 
-        // validate number format
         try {
             std::stod(numStr);
             return Token(TokenType::NUM, numStr, startLine, startColumn);
@@ -96,61 +83,61 @@ private:
         }
     }
 
-    Token getIdentifier(){
+    Token getIdentifier() {
         std::string idStr;
-        size_t startLine = line;
-        size_t startColumn = column;
+        size_t startLine = misc.getLine();
+        size_t startColumn = misc.getColumn();
 
-        while(pos<input.length()&&isIdentifierChar(input[pos])){
-            idStr+=input[pos];
-            pos++;
-            column++;
+        while (!misc.eof() && isIdentifierChar(misc.peek())) {
+            idStr += misc.get();
         }
 
-        return Token(TokenType::IDENTIFIER,idStr,startLine,startColumn);
+        if (idStr == "fn") {
+            return Token(TokenType::FN, idStr, startLine, startColumn);
+        }
+        return Token(TokenType::IDENTIFIER, idStr, startLine, startColumn);
     }
 
 public:
-    Lexer(const std::string& src) : input(src), pos(0), line(1), column(1) {}
+    Lexer(const std::string& src) : misc(src, 1, 1), pos(0) {}
 
     Token nextToken() {
         skipWhitespace();
-
-        while (pos < input.length() && input[pos] == '/' && pos + 1 < input.length() && input[pos + 1] == '/') {
+        while (!misc.eof() && misc.peek() == '/' && misc.getRemaining().length() > 1 && misc.getRemaining()[1] == '/') {
             skipComments();
-            skipWhitespace(); 
+            skipWhitespace();
         }
 
-        if (pos >= input.length()) {
-            return Token(TokenType::END_OF_FILE, "", line, column);
+        if (misc.eof()) {
+            return Token(TokenType::END_OF_FILE, "", misc.getLine(), misc.getColumn());
         }
 
-        char current = input[pos];
-        size_t currentLine = line;
-        size_t currentColumn = column;
+        size_t startLine = misc.getLine();
+        size_t startColumn = misc.getColumn();
+        char current = misc.get();
         pos++;
-        column++;
 
         switch (current) {
-            case '+': return Token(TokenType::PLUS, "+", currentLine, currentColumn);
-            case '-': return Token(TokenType::MINUS, "-", currentLine, currentColumn);
-            case '*': return Token(TokenType::MUL, "*", currentLine, currentColumn);
-            case '/': return Token(TokenType::DIV, "/", currentLine, currentColumn);
-            case '^': return Token(TokenType::EXP, "^", currentLine, currentColumn);
-            case '(': return Token(TokenType::LPAR, "(", currentLine, currentColumn);
-            case ')': return Token(TokenType::RPAR, ")", currentLine, currentColumn);
+            case '+': return Token(TokenType::PLUS, "+", startLine, startColumn);
+            case '-': return Token(TokenType::MINUS, "-", startLine, startColumn);
+            case '*': return Token(TokenType::MUL, "*", startLine, startColumn);
+            case '/': return Token(TokenType::DIV, "/", startLine, startColumn);
+            case '^': return Token(TokenType::EXP, "^", startLine, startColumn);
+            case '(': return Token(TokenType::LPAR, "(", startLine, startColumn);
+            case ')': return Token(TokenType::RPAR, ")", startLine, startColumn);
+            case '{': return Token(TokenType::LBRACE, "{", startLine, startColumn);
+            case '}': return Token(TokenType::RBRACE, "}", startLine, startColumn);
+            case ',': return Token(TokenType::COMMA, ",", startLine, startColumn);
             default:
-                if (std::isdigit(current) || current == '.' || current == '-') {
-                    pos--;
-                    column--;
+                if (std::isdigit(current) || current == '.') {
+                    misc = Misc(std::string(1, current) + misc.getRemaining(), startLine, startColumn);
                     return getNumber();
                 }
-                if(std::isalpha(current)||current=='_'){
-                    pos--;
-                    column--;
+                if (std::isalpha(current) || current == '_') {
+                    misc = Misc(std::string(1, current) + misc.getRemaining(), startLine, startColumn);
                     return getIdentifier();
                 }
-                return Token(TokenType::ERROR, std::string(1, current), currentLine, currentColumn);
+                return Token(TokenType::ERROR, std::string(1, current), startLine, startColumn);
         }
     }
 
@@ -160,11 +147,11 @@ public:
         while (token.type != TokenType::END_OF_FILE) {
             tokens.push_back(token);
             if (token.type == TokenType::ERROR) {
-                break; 
+                break;
             }
             token = nextToken();
         }
-        tokens.push_back(Token(TokenType::END_OF_FILE, "", line, column));
+        tokens.push_back(Token(TokenType::END_OF_FILE, "", misc.getLine(), misc.getColumn()));
         return tokens;
     }
 };
@@ -173,7 +160,8 @@ public:
 enum class NodeType {
     NUMBER,
     IDENTIFIER,
-    BINARY_OP
+    BINARY_OP,
+    FUNCTION
 };
 
 struct ASTNode {
@@ -201,6 +189,19 @@ struct BinaryOpNode : public ASTNode {
     ~BinaryOpNode() {
         delete left;
         delete right;
+    }
+};
+
+struct FunctionNode : public ASTNode {
+    std::string name;
+    std::vector<std::string> params;
+    std::vector<ASTNode*> body;
+    FunctionNode(const std::string& n, const std::vector<std::string>& p, const std::vector<ASTNode*>& b)
+        : ASTNode(NodeType::FUNCTION), name(n), params(p), body(b) {}
+    ~FunctionNode() {
+        for (ASTNode* node : body) {
+            delete node;
+        }
     }
 };
 
@@ -238,18 +239,18 @@ private:
             advance();
             return node;
         }
-        throw std::runtime_error("Expected number or parenthesis at line " +
+        throw std::runtime_error("Expected number, identifier, or parenthesis at line " +
             std::to_string(currentToken.line) + ", column " +
             std::to_string(currentToken.column));
     }
-    
-    ASTNode* power(){
+
+    ASTNode* power() {
         ASTNode* node = factor();
-        while(currentToken.type == TokenType::EXP){
+        while (currentToken.type == TokenType::EXP) {
             TokenType op = currentToken.type;
             advance();
             ASTNode* right = factor();
-            node = new BinaryOpNode(op,node,right);
+            node = new BinaryOpNode(op, node, right);
         }
         return node;
     }
@@ -276,22 +277,87 @@ private:
         return node;
     }
 
+    ASTNode* function() {
+        if (currentToken.type != TokenType::FN) {
+            throw std::runtime_error("Expected 'fn' at line " +
+                std::to_string(currentToken.line) + ", column " +
+                std::to_string(currentToken.column));
+        }
+        advance();
+        if (currentToken.type != TokenType::IDENTIFIER) {
+            throw std::runtime_error("Expected function name at line " +
+                std::to_string(currentToken.line) + ", column " +
+                std::to_string(currentToken.column));
+        }
+        std::string name = currentToken.value;
+        advance();
+        if (currentToken.type != TokenType::LPAR) {
+            throw std::runtime_error("Expected '(' at line " +
+                std::to_string(currentToken.line) + ", column " +
+                std::to_string(currentToken.column));
+        }
+        advance();
+        std::vector<std::string> params;
+        if (currentToken.type != TokenType::RPAR) {
+            do {
+                if (currentToken.type != TokenType::IDENTIFIER) {
+                    throw std::runtime_error("Expected parameter name at line " +
+                        std::to_string(currentToken.line) + ", column " +
+                        std::to_string(currentToken.column));
+                }
+                params.push_back(currentToken.value);
+                advance();
+                if (currentToken.type == TokenType::COMMA) {
+                    advance();
+                } else {
+                    break;
+                }
+            } while (true);
+        }
+        if (currentToken.type != TokenType::RPAR) {
+            throw std::runtime_error("Expected ')' at line " +
+                std::to_string(currentToken.line) + ", column " +
+                std::to_string(currentToken.column));
+        }
+        advance();
+        if (currentToken.type != TokenType::LBRACE) {
+            throw std::runtime_error("Expected '{' at line " +
+                std::to_string(currentToken.line) + ", column " +
+                std::to_string(currentToken.column));
+        }
+        advance();
+        std::vector<ASTNode*> body;
+        while (currentToken.type != TokenType::RBRACE && currentToken.type != TokenType::END_OF_FILE) {
+            body.push_back(expr());
+        }
+        if (currentToken.type != TokenType::RBRACE) {
+            throw std::runtime_error("Expected '}' at line " +
+                std::to_string(currentToken.line) + ", column " +
+                std::to_string(currentToken.column));
+        }
+        advance();
+        return new FunctionNode(name, params, body);
+    }
+
 public:
     Parser(const std::vector<Token>& t) : tokens(t), pos(0), currentToken(TokenType::END_OF_FILE, "", 0, 0) {
         if (!tokens.empty()) {
             currentToken = tokens[0];
             pos = 1;
         }
-    }  
+    }
 
     std::vector<ASTNode*> parse() {
         std::vector<ASTNode*> nodes;
         while (currentToken.type != TokenType::END_OF_FILE) {
-            ASTNode* node = expr();
-            nodes.push_back(node);
+            if (currentToken.type == TokenType::FN) {
+                nodes.push_back(function());
+            } else {
+                nodes.push_back(expr());
+            }
         }
         if (nodes.empty()) {
-            throw std::runtime_error("Empty expression");
+            throw std::runtime_error("Empty input");
         }
         return nodes;
     }
@@ -308,6 +374,10 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::RPAR: return "RPAR";
         case TokenType::NUM: return "NUM";
         case TokenType::IDENTIFIER: return "IDENTIFIER";
+        case TokenType::FN: return "FN";
+        case TokenType::LBRACE: return "LBRACE";
+        case TokenType::RBRACE: return "RBRACE";
+        case TokenType::COMMA: return "COMMA";
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::ERROR: return "ERROR";
         default: return "UNKNOWN";
@@ -328,37 +398,45 @@ void printAST(ASTNode* node, int indent = 0) {
         std::cout << indentStr << "BinaryOp: " << tokenTypeToString(bin->op) << "\n";
         printAST(bin->left, indent + 2);
         printAST(bin->right, indent + 2);
+    } else if (node->type == NodeType::FUNCTION) {
+        FunctionNode* func = dynamic_cast<FunctionNode*>(node);
+        std::cout << indentStr << "Function: " << func->name << "\n";
+        std::cout << indentStr << "  Parameters:\n";
+        for (const auto& param : func->params) {
+            std::cout << indentStr << "    - " << param << "\n";
+        }
+        std::cout << indentStr << "  Body:\n";
+        for (ASTNode* stmt : func->body) {
+            printAST(stmt, indent + 4);
+        }
     }
 }
 
 int main(int argc, char* argv[]) {
-    std::string input;
-
-    if (argc == 3 && std::string(argv[1]) == "-output") {
-        std::string filename(argv[2]);
-        if (filename.length() < 2 || filename.substr(filename.length() - 2) != ".l") {
-            std::cerr << "Error: Input file must have .l extension\n";
-            std::cerr << "Usage: " << argv[0] << " -output <filename.l>\n";
-            return 1;
-        }
-
-        std::ifstream file(argv[2]);
-        if (!file.is_open()) {
-            std::cerr << "Error: Could not open file '" << argv[2] << "'\n";
-            return 1;
-        }
-        std::string line;
-        while (std::getline(file, line)) {
-            input += line + "\n";
-        }
-        file.close();
-    } else {
+    if (argc != 3 || std::string(argv[1]) != "-output") {
         std::cerr << "Usage: " << argv[0] << " -output <filename.l>\n";
         return 1;
     }
 
+    std::string filename(argv[2]);
+    if (filename.length() < 2 || filename.substr(filename.length() - 2) != ".l") {
+        std::cerr << "Error: Input file must have .l extension\n";
+        return 1;
+    }
+
     try {
-        Lexer lexer(input);
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            throw std::runtime_error("Could not open file '" + filename + "'");
+        }
+        std::string src;
+        std::string line;
+        while (std::getline(file, line)) {
+            src += line + '\n';
+        }
+        file.close();
+
+        Lexer lexer(src);
         std::vector<Token> tokens = lexer.tokenize();
 
         std::cout << "\nTokens:\n";
@@ -374,7 +452,7 @@ int main(int argc, char* argv[]) {
         
         std::cout << "\nASTs:\n";
         for (size_t i = 0; i < asts.size(); ++i) {
-            std::cout << "Expression " << i + 1 << ":\n";
+            std::cout << "Node " << i + 1 << ":\n";
             printAST(asts[i]);
             std::cout << "\n";
         }
