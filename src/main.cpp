@@ -8,7 +8,8 @@
 
 enum class TokenType {
     PLUS, MINUS, MUL, DIV, EXP, LPAR, RPAR, NUM, IDENTIFIER, 
-    FN, LBRACE, RBRACE, COMMA, END_OF_FILE, ERROR
+    FN, LBRACE, RBRACE, COMMA, END_OF_FILE, ERROR,
+    U8, U16, U32, U64
 };
 
 struct Token {
@@ -95,6 +96,18 @@ private:
         if (idStr == "fn") {
             return Token(TokenType::FN, idStr, startLine, startColumn);
         }
+        else if (idStr == "u8") {
+            return Token(TokenType::U8, idStr, startLine, startColumn);
+        }
+        else if (idStr == "u16") {
+            return Token(TokenType::U16, idStr, startLine, startColumn);
+        }
+        else if (idStr == "u32") {
+            return Token(TokenType::U32, idStr, startLine, startColumn);
+        }
+        else if (idStr == "u64") {
+            return Token(TokenType::U64, idStr, startLine, startColumn);
+        }
         return Token(TokenType::IDENTIFIER, idStr, startLine, startColumn);
     }
 
@@ -161,7 +174,8 @@ enum class NodeType {
     NUMBER,
     IDENTIFIER,
     BINARY_OP,
-    FUNCTION
+    FUNCTION,
+    UNSIGNED_INT
 };
 
 struct ASTNode {
@@ -195,6 +209,7 @@ struct BinaryOpNode : public ASTNode {
 struct FunctionNode : public ASTNode {
     std::string name;
     std::vector<std::string> params;
+    std::vector<TokenType> paramTypes;
     std::vector<ASTNode*> body;
     FunctionNode(const std::string& n, const std::vector<std::string>& p, const std::vector<ASTNode*>& b)
         : ASTNode(NodeType::FUNCTION), name(n), params(p), body(b) {}
@@ -203,6 +218,13 @@ struct FunctionNode : public ASTNode {
             delete node;
         }
     }
+};
+
+struct UnsignedIntNode : public ASTNode {
+    TokenType type;
+    std::string value;
+    explicit UnsignedIntNode(TokenType t, const std::string& v)
+        : ASTNode(NodeType::UNSIGNED_INT), type(t), value(v) {}
 };
 
 class Parser {
@@ -228,6 +250,14 @@ private:
             std::string name = currentToken.value;
             advance();
             return new IdentifierNode(name);
+        } else if (currentToken.type == TokenType::U8 ||
+                    currentToken.type == TokenType::U16 ||
+                    currentToken.type == TokenType::U32 ||
+                    currentToken.type == TokenType::U64) {
+            TokenType type = currentToken.type;
+            std::string value = currentToken.value;
+            advance();
+            return new UnsignedIntNode(type, value);
         } else if (currentToken.type == TokenType::LPAR) {
             advance();
             ASTNode* node = expr();
@@ -298,14 +328,26 @@ private:
         }
         advance();
         std::vector<std::string> params;
+        std::vector<TokenType> paramTypes;
         if (currentToken.type != TokenType::RPAR) {
             do {
+                TokenType paramType = TokenType::ERROR;
+                if (currentToken.type == TokenType::U8 ||
+                    currentToken.type == TokenType::U16 ||
+                    currentToken.type == TokenType::U32 ||
+                    currentToken.type == TokenType::U64) {
+                    paramType = currentToken.type;
+                    advance();
+                }
                 if (currentToken.type != TokenType::IDENTIFIER) {
                     throw std::runtime_error("Expected parameter name at line " +
                         std::to_string(currentToken.line) + ", column " +
                         std::to_string(currentToken.column));
                 }
                 params.push_back(currentToken.value);
+                if (paramType != TokenType::ERROR) {
+                    paramTypes.push_back(paramType);
+                }
                 advance();
                 if (currentToken.type == TokenType::COMMA) {
                     advance();
@@ -380,6 +422,10 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::COMMA: return "COMMA";
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::ERROR: return "ERROR";
+        case TokenType::U8: return "U8";
+        case TokenType::U16: return "U16";
+        case TokenType::U32: return "U32";
+        case TokenType::U64: return "U64";
         default: return "UNKNOWN";
     }
 }
@@ -409,6 +455,9 @@ void printAST(ASTNode* node, int indent = 0) {
         for (ASTNode* stmt : func->body) {
             printAST(stmt, indent + 4);
         }
+    } else if (node->type == NodeType::UNSIGNED_INT) {
+        UnsignedIntNode* uint = dynamic_cast<UnsignedIntNode*>(node);
+        std::cout << indentStr << "UnsignedInt: " << uint->value << "\n";
     }
 }
 
