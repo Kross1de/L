@@ -9,7 +9,7 @@
 enum class TokenType {
     PLUS, MINUS, MUL, DIV, EXP, LPAR, RPAR, NUM, IDENTIFIER, 
     FN, LBRACE, RBRACE, COMMA, END_OF_FILE, ERROR,
-    U8, U16, U32, U64
+    U8, U16, U32, U64, CONST
 };
 
 struct Token {
@@ -46,11 +46,11 @@ private:
         }
     }
 
-    bool isNumberChar(char c) {
+    bool isNumberChar(char c) const {
         return std::isdigit(c) || c == '.';
     }
 
-    bool isIdentifierChar(char c) {
+    bool isIdentifierChar(char c) const {
         return std::isalnum(c) || c == '_';
     }
 
@@ -95,6 +95,9 @@ private:
 
         if (idStr == "fn") {
             return Token(TokenType::FN, idStr, startLine, startColumn);
+        }
+        else if (idStr == "const") {
+            return Token(TokenType::CONST, idStr, startLine, startColumn);
         }
         else if (idStr == "u8") {
             return Token(TokenType::U8, idStr, startLine, startColumn);
@@ -210,9 +213,12 @@ struct FunctionNode : public ASTNode {
     std::string name;
     std::vector<std::string> params;
     std::vector<TokenType> paramTypes;
+    std::vector<bool> paramIsConst;
     std::vector<ASTNode*> body;
-    FunctionNode(const std::string& n, const std::vector<std::string>& p, const std::vector<ASTNode*>& b)
-        : ASTNode(NodeType::FUNCTION), name(n), params(p), body(b) {}
+    FunctionNode(const std::string& n, const std::vector<std::string>& p,
+                 const std::vector<TokenType>& pt, const std::vector<bool>& pc,
+                 const std::vector<ASTNode*>& b)
+        : ASTNode(NodeType::FUNCTION), name(n), params(p), paramTypes(pt), paramIsConst(pc),body(b) {}
     ~FunctionNode() {
         for (ASTNode* node : body) {
             delete node;
@@ -329,8 +335,14 @@ private:
         advance();
         std::vector<std::string> params;
         std::vector<TokenType> paramTypes;
+        std::vector<bool> paramIsConst;
         if (currentToken.type != TokenType::RPAR) {
             do {
+                bool isConst = false;
+                if(currentToken.type == TokenType::CONST) {
+                    isConst = true;
+                    advance();
+                }
                 TokenType paramType = TokenType::ERROR;
                 if (currentToken.type == TokenType::U8 ||
                     currentToken.type == TokenType::U16 ||
@@ -345,6 +357,7 @@ private:
                         std::to_string(currentToken.column));
                 }
                 params.push_back(currentToken.value);
+                paramIsConst.push_back(isConst);
                 if (paramType != TokenType::ERROR) {
                     paramTypes.push_back(paramType);
                 }
@@ -378,7 +391,7 @@ private:
                 std::to_string(currentToken.column));
         }
         advance();
-        return new FunctionNode(name, params, body);
+        return new FunctionNode(name, params, paramTypes, paramIsConst, body);
     }
 
 public:
@@ -426,37 +439,40 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::U16: return "U16";
         case TokenType::U32: return "U32";
         case TokenType::U64: return "U64";
+        case TokenType::CONST: return "CONST";
         default: return "UNKNOWN";
     }
 }
 
-void printAST(ASTNode* node, int indent = 0) {
+void printAST(const ASTNode* node, int indent = 0) {
     if (!node) return;
     std::string indentStr(indent, ' ');
     if (node->type == NodeType::NUMBER) {
-        NumberNode* num = dynamic_cast<NumberNode*>(node);
+        const NumberNode* num = dynamic_cast<const NumberNode*>(node);
         std::cout << indentStr << "Number: " << num->value << "\n";
     } else if (node->type == NodeType::IDENTIFIER) {
-        IdentifierNode* id = dynamic_cast<IdentifierNode*>(node);
+        const IdentifierNode* id = dynamic_cast<const IdentifierNode*>(node);
         std::cout << indentStr << "Identifier: " << id->name << "\n";
     } else if (node->type == NodeType::BINARY_OP) {
-        BinaryOpNode* bin = dynamic_cast<BinaryOpNode*>(node);
+        const BinaryOpNode* bin = dynamic_cast<const BinaryOpNode*>(node);
         std::cout << indentStr << "BinaryOp: " << tokenTypeToString(bin->op) << "\n";
         printAST(bin->left, indent + 2);
         printAST(bin->right, indent + 2);
     } else if (node->type == NodeType::FUNCTION) {
-        FunctionNode* func = dynamic_cast<FunctionNode*>(node);
+        const FunctionNode* func = dynamic_cast<const FunctionNode*>(node);
         std::cout << indentStr << "Function: " << func->name << "\n";
         std::cout << indentStr << "  Parameters:\n";
-        for (const auto& param : func->params) {
-            std::cout << indentStr << "    - " << param << "\n";
+        for (size_t i = 0; i < func->params.size(); ++i) {
+            std::string paramStr = func->paramIsConst[i] ? "const " : "";
+            paramStr += (func->paramTypes.size() > i ? tokenTypeToString(func->paramTypes[i]) + " " : "") + func->params[i];
+            std::cout << indentStr << "    - " << paramStr << "\n";
         }
         std::cout << indentStr << "  Body:\n";
-        for (ASTNode* stmt : func->body) {
+        for (const ASTNode* stmt : func->body) {
             printAST(stmt, indent + 4);
         }
     } else if (node->type == NodeType::UNSIGNED_INT) {
-        UnsignedIntNode* uint = dynamic_cast<UnsignedIntNode*>(node);
+        const UnsignedIntNode* uint = dynamic_cast<const UnsignedIntNode*>(node);
         std::cout << indentStr << "UnsignedInt: " << uint->value << "\n";
     }
 }

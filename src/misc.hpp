@@ -17,10 +17,10 @@ public:
 	Misc(const std::string& filename);
 	Misc(const std::string& src, uint64_t start_line = 1, uint64_t start_column = 1);
 	char peek() const;
-    	char get();
-    	bool eof() const;
-    	uint64_t getLine() const { return line; } 
-    	uint64_t getColumn() const { return column; }
-    	std::string getRemaining() const;
+    char get();
+    bool eof() const;
+    uint64_t getLine() const { return line; } 
+    uint64_t getColumn() const { return column; }
+    std::string getRemaining() const;
 };
 #endif
