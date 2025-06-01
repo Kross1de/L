@@ -5,12 +5,8 @@
 #include <fstream>
 #include <stdexcept>
 #include "misc.hpp"
-
-enum class TokenType {
-    PLUS, MINUS, MUL, DIV, EXP, LPAR, RPAR, NUM, IDENTIFIER, 
-    FN, LBRACE, RBRACE, COMMA, END_OF_FILE, ERROR,
-    U8, U16, U32, U64, CONST
-};
+#include "codegen.hpp"
+#include "ast.hpp"
 
 struct Token {
     TokenType type;
@@ -35,8 +31,8 @@ private:
 
     void skipComments() {
         if (!misc.eof() && misc.peek() == '/' && misc.getRemaining().length() > 1 && misc.getRemaining()[1] == '/') {
-            misc.get(); 
-            misc.get(); 
+            misc.get();
+            misc.get();
             while (!misc.eof() && misc.peek() != '\n') {
                 misc.get();
             }
@@ -60,7 +56,7 @@ private:
         size_t startLine = misc.getLine();
         size_t startColumn = misc.getColumn();
 
-        if (!misc.eof() && misc.peek() == '-' && 
+        if (!misc.eof() && misc.peek() == '-' &&
             (pos == 0 || std::isspace(misc.getRemaining()[pos-1]) || misc.getRemaining()[pos-1] == '(')) {
             numStr += misc.get();
         }
@@ -172,67 +168,6 @@ public:
     }
 };
 
-// AST node types
-enum class NodeType {
-    NUMBER,
-    IDENTIFIER,
-    BINARY_OP,
-    FUNCTION,
-    UNSIGNED_INT
-};
-
-struct ASTNode {
-    NodeType type;
-    virtual ~ASTNode() = default;
-    explicit ASTNode(NodeType t) : type(t) {}
-};
-
-struct NumberNode : public ASTNode {
-    double value;
-    explicit NumberNode(double v) : ASTNode(NodeType::NUMBER), value(v) {}
-};
-
-struct IdentifierNode : public ASTNode {
-    std::string name;
-    explicit IdentifierNode(const std::string& n) : ASTNode(NodeType::IDENTIFIER), name(n) {}
-};
-
-struct BinaryOpNode : public ASTNode {
-    TokenType op;
-    ASTNode* left;
-    ASTNode* right;
-    BinaryOpNode(TokenType o, ASTNode* l, ASTNode* r)
-        : ASTNode(NodeType::BINARY_OP), op(o), left(l), right(r) {}
-    ~BinaryOpNode() {
-        delete left;
-        delete right;
-    }
-};
-
-struct FunctionNode : public ASTNode {
-    std::string name;
-    std::vector<std::string> params;
-    std::vector<TokenType> paramTypes;
-    std::vector<bool> paramIsConst;
-    std::vector<ASTNode*> body;
-    FunctionNode(const std::string& n, const std::vector<std::string>& p,
-                 const std::vector<TokenType>& pt, const std::vector<bool>& pc,
-                 const std::vector<ASTNode*>& b)
-        : ASTNode(NodeType::FUNCTION), name(n), params(p), paramTypes(pt), paramIsConst(pc),body(b) {}
-    ~FunctionNode() {
-        for (ASTNode* node : body) {
-            delete node;
-        }
-    }
-};
-
-struct UnsignedIntNode : public ASTNode {
-    TokenType type;
-    std::string value;
-    explicit UnsignedIntNode(TokenType t, const std::string& v)
-        : ASTNode(NodeType::UNSIGNED_INT), type(t), value(v) {}
-};
-
 class Parser {
 private:
     const std::vector<Token>& tokens;
@@ -257,9 +192,9 @@ private:
             advance();
             return new IdentifierNode(name);
         } else if (currentToken.type == TokenType::U8 ||
-                    currentToken.type == TokenType::U16 ||
-                    currentToken.type == TokenType::U32 ||
-                    currentToken.type == TokenType::U64) {
+                   currentToken.type == TokenType::U16 ||
+                   currentToken.type == TokenType::U32 ||
+                   currentToken.type == TokenType::U64) {
             TokenType type = currentToken.type;
             std::string value = currentToken.value;
             advance();
@@ -339,7 +274,7 @@ private:
         if (currentToken.type != TokenType::RPAR) {
             do {
                 bool isConst = false;
-                if(currentToken.type == TokenType::CONST) {
+                if (currentToken.type == TokenType::CONST) {
                     isConst = true;
                     advance();
                 }
@@ -507,20 +442,24 @@ int main(int argc, char* argv[]) {
         std::cout << "\nTokens:\n";
         for (const auto& token : tokens) {
             std::cout << "Type: " << tokenTypeToString(token.type)
-                      << ", Value: " << token.value 
-                      << ", Line: " << token.line 
+                      << ", Value: " << token.value
+                      << ", Line: " << token.line
                       << ", Column: " << token.column << "\n";
         }
 
         Parser parser(tokens);
         std::vector<ASTNode*> asts = parser.parse();
-        
+
         std::cout << "\nASTs:\n";
         for (size_t i = 0; i < asts.size(); ++i) {
             std::cout << "Node " << i + 1 << ":\n";
             printAST(asts[i]);
             std::cout << "\n";
         }
+
+        CodeGen codegen;
+        codegen.generate(asts);
+        std::cout << "\nGenerated Assembly:\n" << codegen.getCode() << "\n";
 
         for (ASTNode* ast : asts) {
             delete ast;

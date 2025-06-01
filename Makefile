@@ -129,6 +129,30 @@ llang/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/llang.dir/build.make CMakeFiles/llang.dir/build
 .PHONY : llang/fast
 
+src/codegen.o: src/codegen.cpp.o
+.PHONY : src/codegen.o
+
+# target to build an object file
+src/codegen.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/llang.dir/build.make CMakeFiles/llang.dir/src/codegen.cpp.o
+.PHONY : src/codegen.cpp.o
+
+src/codegen.i: src/codegen.cpp.i
+.PHONY : src/codegen.i
+
+# target to preprocess a source file
+src/codegen.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/llang.dir/build.make CMakeFiles/llang.dir/src/codegen.cpp.i
+.PHONY : src/codegen.cpp.i
+
+src/codegen.s: src/codegen.cpp.s
+.PHONY : src/codegen.s
+
+# target to generate assembly for a file
+src/codegen.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/llang.dir/build.make CMakeFiles/llang.dir/src/codegen.cpp.s
+.PHONY : src/codegen.cpp.s
+
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
 
@@ -186,6 +210,9 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... llang"
+	@echo "... src/codegen.o"
+	@echo "... src/codegen.i"
+	@echo "... src/codegen.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"
