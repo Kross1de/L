@@ -7,11 +7,13 @@
 enum class TokenType {
     PLUS, MINUS, MUL, DIV, EXP, LPAR, RPAR, NUM, IDENTIFIER,
     FN, LBRACE, RBRACE, COMMA, END_OF_FILE, ERROR,
-    U8, U16, U32, U64, CONST
+    U8, U16, U32, U64, CONST,
+    INT, FLOAT
 };
 
 enum class NodeType {
-    NUMBER, IDENTIFIER, BINARY_OP, FUNCTION, UNSIGNED_INT
+    NUMBER, IDENTIFIER, BINARY_OP, FUNCTION, UNSIGNED_INT,
+    SIGNED_INT, FLOAT
 };
 
 struct ASTNode {
@@ -64,6 +66,20 @@ struct UnsignedIntNode : public ASTNode {
     std::string value;
     explicit UnsignedIntNode(TokenType t, const std::string& v)
         : ASTNode(NodeType::UNSIGNED_INT), type(t), value(v) {}
+};
+
+struct SignedIntNode : public ASTNode {
+    TokenType type;
+    std::string value;
+    explicit SignedIntNode(TokenType t, const std::string& v)
+        : ASTNode(NodeType::SIGNED_INT), type(t), value(v) {}
+};
+
+struct FloatNode : public ASTNode {
+    TokenType type;
+    std::string value;
+    explicit FloatNode(TokenType t, const std::string& v)
+        : ASTNode(NodeType::FLOAT), type(t), value(v) {}
 };
 
 #endif

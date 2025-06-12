@@ -1,4 +1,4 @@
-fn subtractNumber(const u32 a,u32 b)
+fn calculate(int x, float y) // Super cool function for calculating 2 values
 {
-    a - b
+	x + y
 }

@@ -5,7 +5,6 @@
 #include <fstream>
 #include <stdexcept>
 #include "misc.hpp"
-#include "codegen.hpp"
 #include "ast.hpp"
 
 struct Token {
@@ -43,7 +42,7 @@ private:
     }
 
     bool isNumberChar(char c) const {
-        return std::isdigit(c) || c == '.';
+        return std::isdigit(c) || c == '.' || c == '-';
     }
 
     bool isIdentifierChar(char c) const {
@@ -106,6 +105,12 @@ private:
         }
         else if (idStr == "u64") {
             return Token(TokenType::U64, idStr, startLine, startColumn);
+        }
+        else if (idStr == "int") {
+            return Token(TokenType::INT, idStr, startLine, startColumn);
+        }
+        else if (idStr == "float") {
+            return Token(TokenType::FLOAT, idStr, startLine, startColumn);
         }
         return Token(TokenType::IDENTIFIER, idStr, startLine, startColumn);
     }
@@ -184,9 +189,14 @@ private:
 
     ASTNode* factor() {
         if (currentToken.type == TokenType::NUM) {
-            double value = std::stod(currentToken.value);
+            std::string value = currentToken.value;
+            bool isFloat = value.find('.') != std::string::npos;
             advance();
-            return new NumberNode(value);
+            if (isFloat) {
+                return new NumberNode(std::stod(value));
+            } else {
+                return new SignedIntNode(TokenType::INT, value);
+            }
         } else if (currentToken.type == TokenType::IDENTIFIER) {
             std::string name = currentToken.value;
             advance();
@@ -194,11 +204,19 @@ private:
         } else if (currentToken.type == TokenType::U8 ||
                    currentToken.type == TokenType::U16 ||
                    currentToken.type == TokenType::U32 ||
-                   currentToken.type == TokenType::U64) {
+                   currentToken.type == TokenType::U64 ||
+                   currentToken.type == TokenType::INT ||
+                   currentToken.type == TokenType::FLOAT) {
             TokenType type = currentToken.type;
             std::string value = currentToken.value;
             advance();
-            return new UnsignedIntNode(type, value);
+            if (type == TokenType::INT) {
+                return new SignedIntNode(type, value);
+            } else if (type == TokenType::FLOAT) {
+                return new FloatNode(type, value);
+            } else {
+                return new UnsignedIntNode(type, value);
+            }
         } else if (currentToken.type == TokenType::LPAR) {
             advance();
             ASTNode* node = expr();
@@ -282,7 +300,9 @@ private:
                 if (currentToken.type == TokenType::U8 ||
                     currentToken.type == TokenType::U16 ||
                     currentToken.type == TokenType::U32 ||
-                    currentToken.type == TokenType::U64) {
+                    currentToken.type == TokenType::U64 ||
+                    currentToken.type == TokenType::INT ||
+                    currentToken.type == TokenType::FLOAT) {
                     paramType = currentToken.type;
                     advance();
                 }
@@ -375,6 +395,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::U32: return "U32";
         case TokenType::U64: return "U64";
         case TokenType::CONST: return "CONST";
+        case TokenType::INT: return "INT";
+        case TokenType::FLOAT: return "FLOAT";
         default: return "UNKNOWN";
     }
 }
@@ -409,6 +431,12 @@ void printAST(const ASTNode* node, int indent = 0) {
     } else if (node->type == NodeType::UNSIGNED_INT) {
         const UnsignedIntNode* uint = dynamic_cast<const UnsignedIntNode*>(node);
         std::cout << indentStr << "UnsignedInt: " << uint->value << "\n";
+    } else if (node->type == NodeType::SIGNED_INT) {
+        const SignedIntNode* sint = dynamic_cast<const SignedIntNode*>(node);
+        std::cout << indentStr << "SignedInt: " << sint->value << "\n";
+    } else if (node->type == NodeType::FLOAT) {
+        const FloatNode* flt = dynamic_cast<const FloatNode*>(node);
+        std::cout << indentStr << "Float: " << flt->value << "\n";
     }
 }
 
@@ -456,10 +484,6 @@ int main(int argc, char* argv[]) {
             printAST(asts[i]);
             std::cout << "\n";
         }
-
-        CodeGen codegen;
-        codegen.generate(asts);
-        std::cout << "\nGenerated Assembly:\n" << codegen.getCode() << "\n";
 
         for (ASTNode* ast : asts) {
             delete ast;
