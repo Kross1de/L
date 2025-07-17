@@ -5,6 +5,7 @@
 #include <fstream>
 #include <stdexcept>
 #include "misc.hpp"
+#include "codegen.hpp"
 #include "ast.hpp"
 
 struct Token {
@@ -145,6 +146,7 @@ public:
             case '{': return Token(TokenType::LBRACE, "{", startLine, startColumn);
             case '}': return Token(TokenType::RBRACE, "}", startLine, startColumn);
             case ',': return Token(TokenType::COMMA, ",", startLine, startColumn);
+			case '=': return Token(TokenType::EQUAL, "=", startLine, startColumn);
             default:
                 if (std::isdigit(current) || current == '.') {
                     misc = Misc(std::string(1, current) + misc.getRemaining(), startLine, startColumn);
@@ -232,6 +234,23 @@ private:
             std::to_string(currentToken.line) + ", column " +
             std::to_string(currentToken.column));
     }
+	
+	ASTNode* statement() {
+		if (currentToken.type == TokenType::IDENTIFIER) {
+			std::string id = currentToken.value;
+			advance();
+			if (currentToken.type == TokenType::EQUAL) {
+				advance();
+				ASTNode* value = expr();
+				return new AssignmentNode(id, value);
+			}
+			// if not an assignment, treat as expression
+			pos--;
+			currentToken = tokens[pos-1];
+			return expr();
+		}
+		return expr();
+	}
 
     ASTNode* power() {
         ASTNode* node = factor();
@@ -338,7 +357,7 @@ private:
         advance();
         std::vector<ASTNode*> body;
         while (currentToken.type != TokenType::RBRACE && currentToken.type != TokenType::END_OF_FILE) {
-            body.push_back(expr());
+            body.push_back(statement());
         }
         if (currentToken.type != TokenType::RBRACE) {
             throw std::runtime_error("Expected '}' at line " +
@@ -397,6 +416,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::CONST: return "CONST";
         case TokenType::INT: return "INT";
         case TokenType::FLOAT: return "FLOAT";
+		case TokenType::EQUAL: return "EQUAL";
         default: return "UNKNOWN";
     }
 }
@@ -437,7 +457,11 @@ void printAST(const ASTNode* node, int indent = 0) {
     } else if (node->type == NodeType::FLOAT) {
         const FloatNode* flt = dynamic_cast<const FloatNode*>(node);
         std::cout << indentStr << "Float: " << flt->value << "\n";
-    }
+    } else if (node->type == NodeType::ASSIGNMENT) {
+		const auto* assign = dynamic_cast<const AssignmentNode*>(node);
+		std::cout << indentStr << "Assignment: " << assign->identifier << "\n";
+		printAST(assign->value, indent + 2);
+	}
 }
 
 int main(int argc, char* argv[]) {
@@ -484,6 +508,12 @@ int main(int argc, char* argv[]) {
             printAST(asts[i]);
             std::cout << "\n";
         }
+		
+		CodeGenerator codeGen;
+		std::string asmCode = codeGen.generateCode(asts);
+		std::ofstream outFile("out.asm");
+		outFile << asmCode;
+		outFile.close();
 
         for (ASTNode* ast : asts) {
             delete ast;

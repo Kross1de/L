@@ -8,12 +8,12 @@ enum class TokenType {
     PLUS, MINUS, MUL, DIV, EXP, LPAR, RPAR, NUM, IDENTIFIER,
     FN, LBRACE, RBRACE, COMMA, END_OF_FILE, ERROR,
     U8, U16, U32, U64, CONST,
-    INT, FLOAT
+    INT, FLOAT, EQUAL
 };
 
 enum class NodeType {
     NUMBER, IDENTIFIER, BINARY_OP, FUNCTION, UNSIGNED_INT,
-    SIGNED_INT, FLOAT
+    SIGNED_INT, FLOAT, ASSIGNMENT
 };
 
 struct ASTNode {
@@ -80,6 +80,15 @@ struct FloatNode : public ASTNode {
     std::string value;
     explicit FloatNode(TokenType t, const std::string& v)
         : ASTNode(NodeType::FLOAT), type(t), value(v) {}
+};
+
+class AssignmentNode : public ASTNode {
+public:
+    std::string identifier;
+    ASTNode* value;
+    AssignmentNode(const std::string& id, ASTNode* val)
+        : ASTNode(NodeType::ASSIGNMENT), identifier(id), value(val) {}
+    ~AssignmentNode() { delete value; }
 };
 
 #endif

@@ -1,4 +1,7 @@
 *.cmake
 CMakeCache.txt
-CMakeFiles/
+/CMakeFiles
 Makefile
+*.o
+*.asm
+llang
