@@ -5,8 +5,8 @@
 #include <fstream>
 #include <stdexcept>
 #include "misc.hpp"
-#include "codegen.hpp"
 #include "ast.hpp"
+#include "CodeGenerator.cpp"
 
 struct Token {
     TokenType type;
@@ -502,6 +502,13 @@ int main(int argc, char* argv[]) {
         Parser parser(tokens);
         std::vector<ASTNode*> asts = parser.parse();
 
+        CodeGenerator generator;
+        std::string asmcode = generator.generate(asts);
+
+        std::ofstream outfile("output.asm");
+        outfile << asmcode;
+        outfile.close();
+
         std::cout << "\nASTs:\n";
         for (size_t i = 0; i < asts.size(); ++i) {
             std::cout << "Node " << i + 1 << ":\n";
@@ -509,12 +516,6 @@ int main(int argc, char* argv[]) {
             std::cout << "\n";
         }
 		
-		CodeGenerator codeGen;
-		std::string asmCode = codeGen.generateCode(asts);
-		std::ofstream outFile("out.asm");
-		outFile << asmCode;
-		outFile.close();
-
         for (ASTNode* ast : asts) {
             delete ast;
         }
