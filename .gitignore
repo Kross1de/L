@@ -1,7 +1,8 @@
-*.cmake
-CMakeCache.txt
+/*.cmake
+/CMakeCache.txt
 /CMakeFiles
-Makefile
-*.o
-*.asm
-llang
+/Makefile
+/cmake_install.cmake
+/*.o
+/*.asm
+/llang
